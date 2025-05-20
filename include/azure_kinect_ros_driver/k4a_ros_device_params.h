@@ -80,7 +80,20 @@
               int, 0)                                                                                                  \
   LIST_ENTRY(subordinate_delay_off_master_usec,                                                                        \
               "Delay subordinate camera off master camera by specified amount in usec.",                               \
-              int, 0)
+              int, 0)                                                                                                  \
+  /* New color-control parameters */                                                                                   \
+  LIST_ENTRY(exposure_control_mode, "Exposure control mode: auto or manual", std::string, std::string("manual"))       \
+  LIST_ENTRY(white_balance_control_mode, "White balance control mode: auto or manual",                                 \
+             std::string, std::string("auto"))                                                                         \
+  LIST_ENTRY(exposure_time_absolute, "Exposure time in microseconds (manual mode)", int, 16670)                        \
+  LIST_ENTRY(white_balance, "White balance in Kelvin (manual mode)", int, 4500)                                        \
+  LIST_ENTRY(brightness, "Brightness (0–255)", int, 128)                                                               \
+  LIST_ENTRY(contrast, "Contrast", int, 5)                                                                             \
+  LIST_ENTRY(saturation, "Saturation", int, 32)                                                                        \
+  LIST_ENTRY(sharpness, "Sharpness", int, 2)                                                                           \
+  LIST_ENTRY(gain, "Gain", int, 0)                                                                                     \
+  LIST_ENTRY(backlight_compensation, "Backlight compensation (0=off,1=on)", int, 0)                                    \
+  LIST_ENTRY(powerline_frequency, "Powerline frequency (1=50Hz,2=60Hz)", int, 2)
 
 class K4AROSDeviceParams : public rclcpp::Node
 {
@@ -89,6 +102,9 @@ public:
 
   // Get a device configuration from a a set of parameters
   k4a_result_t GetDeviceConfig(k4a_device_configuration_t* configuration);
+
+  // Set the color control parameters
+  void ApplyColorControls(k4a_device_t device);
 
   // Print help messages to the console
   void Help();

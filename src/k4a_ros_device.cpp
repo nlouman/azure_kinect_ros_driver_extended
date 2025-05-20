@@ -77,6 +77,19 @@ K4AROSDevice::K4AROSDevice()
   this->declare_parameter("imu_rate_target", rclcpp::ParameterValue(0));
   this->declare_parameter("wired_sync_mode", rclcpp::ParameterValue(0));
   this->declare_parameter("subordinate_delay_off_master_usec", rclcpp::ParameterValue(0));
+  // NEW color control parameters
+  this->declare_parameter("exposure_control_mode",  rclcpp::ParameterValue(std::string("auto")));
+  this->declare_parameter("white_balance_control_mode", rclcpp::ParameterValue(std::string("auto")));
+  this->declare_parameter("exposure_time_absolute", rclcpp::ParameterValue(16670));
+  this->declare_parameter("white_balance",          rclcpp::ParameterValue(4500));
+  this->declare_parameter("brightness",             rclcpp::ParameterValue(128));
+  this->declare_parameter("contrast",               rclcpp::ParameterValue(5));
+  this->declare_parameter("saturation",             rclcpp::ParameterValue(32));
+  this->declare_parameter("sharpness",              rclcpp::ParameterValue(2));
+  this->declare_parameter("gain",                   rclcpp::ParameterValue(0));
+  this->declare_parameter("backlight_compensation", rclcpp::ParameterValue(0));
+  this->declare_parameter("powerline_frequency",    rclcpp::ParameterValue(2));
+
 
   // Collect ROS parameters from the param server or from the command line
 #define LIST_ENTRY(param_variable, param_help_string, param_type, param_default_val) \
@@ -174,6 +187,19 @@ K4AROSDevice::K4AROSDevice()
 
     if (params_.sensor_sn != "")
     {
+      // Raise error if length of serial number is 0
+      if (params_.sensor_sn.length() == 0)
+      {
+        RCLCPP_ERROR(this->get_logger(),"Serial number is not '' but empty");
+        return;
+      }
+      // If the first symbol of the serial number is 'x', remove it
+      // This is a workaround for the fact that the serial number of the device
+      // is converted to an integer by ROS2, therefore we prepend an 'x' to keep it as a string
+      if (params_.sensor_sn[0] == 'x')
+      {
+        params_.sensor_sn = params_.sensor_sn.substr(1);
+      }
       RCLCPP_INFO_STREAM(this->get_logger(),"Searching for sensor with serial number: " << params_.sensor_sn);
     }
     else
@@ -356,6 +382,7 @@ k4a_result_t K4AROSDevice::startCameras()
   {
     RCLCPP_INFO_STREAM(this->get_logger(),"STARTING CAMERAS");
     k4a_device_.start_cameras(&k4a_configuration);
+    params_.ApplyColorControls(k4a_device_.handle()); // NEW Apply color control parameters
   }
 
   // Cannot assume the device timestamp begins increasing upon starting the cameras.

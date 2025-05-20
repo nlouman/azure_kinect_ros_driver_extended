@@ -1,9 +1,12 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
+# Added support for color control parameters and YAML file reading
+# For more information, contact: https://github.com/nlouman/
+
 import os
 import xacro
-import yaml  # <-- NEW: For reading /azure_kinect_0
+import yaml
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription, conditions
@@ -38,8 +41,11 @@ def generate_launch_description():
     urdf = open(urdf_path).read()
     print("Robot description urdf_path : {}".format(urdf_path))
 
-    # We'll read /azure_kinect_0 if it exists, to override defaults
-    param_file_path = "/azure_kinect_0"
+    # We'll read the parameters from a YAML file if it exists
+    # The file path is set by the CONFIG_PATH environment variable
+    # or defaults to /azure_kinect_0
+    # This is used to override the default launch arguments
+    param_file_path = os.getenv("CONFIG_PATH", "/azure_kinect_0")
     param_keys = [
         "depth_enabled",
         "depth_mode",
@@ -61,25 +67,56 @@ def generate_launch_description():
         "imu_rate_target",
         "wired_sync_mode",
         "subordinate_delay_off_master_usec",
+        # NEW color control parameters
+        "exposure_time_absolute",
+        "exposure_control_mode",
+        "white_balance",
+        "white_balance_control_mode",
+        "brightness",
+        "contrast",
+        "saturation",
+        "sharpness",
+        "gain",
+        "backlight_compensation",
+        "powerline_frequency",
+        # NEW camera namespace and name
+        "camera_namespace",
+        "camera_name",
     ]
 
     param_overrides = {}
+    camera_namespace = "datahub_01"
+    camera_name = "azure_kinect_0"
+
     if os.path.exists(param_file_path):
         print(f"INFO: Found parameter file at {param_file_path}. Overriding defaults.")
         with open(param_file_path, "r") as f:
             config = yaml.safe_load(f) or {}
+        # collect overrides
         for k in param_keys:
             if k in config:
-                param_overrides[k] = config[k]
+                val = config[k]
+                if k == "sensor_sn":
+                    # Force it to be a string by prefixing with 'x'
+                    val = 'x' + str(val) if val != "" else str(val) # prefix with 'x' to avoid conflict with int
+                param_overrides[k] = val
+        # read camera namespace and name
+        camera_namespace = config.get("camera_namespace", camera_namespace)
+        camera_name = config.get("camera_name", camera_name)
     else:
         print(f"WARNING: No param file found at {param_file_path}. Using default launch arguments.")
+
+    # Construct the full namespace (/namespace/device)
+    full_namespace = f"/{camera_namespace}/{camera_name}"
 
     # These remappings are used to publish azure_description vs. robot_description
     remappings = [("robot_description", "azure_description")]
 
     return LaunchDescription(
         [
-            PushRosNamespace("/datahub_01/azure_kinect_0"),
+            # Push into the configured namespace
+            PushRosNamespace(full_namespace),
+
             DeclareLaunchArgument(
                 "overwrite_robot_description",
                 default_value="true",
@@ -107,6 +144,62 @@ def generate_launch_description():
             DeclareLaunchArgument("imu_rate_target", default_value="0"),
             DeclareLaunchArgument("wired_sync_mode", default_value="0"),
             DeclareLaunchArgument("subordinate_delay_off_master_usec", default_value="0"),
+            # NEW color control launch arguments
+            DeclareLaunchArgument(
+                "exposure_time_absolute",
+                default_value="16670",
+                description="Exposure time in microseconds (manual mode).",
+            ),
+            DeclareLaunchArgument(
+                "exposure_control_mode",
+                default_value="auto",
+                description="Exposure control mode: auto or manual"
+            ),
+            DeclareLaunchArgument(
+                "white_balance",
+                default_value="4500",
+                description="White balance in Kelvin (manual mode).",
+            ),
+            DeclareLaunchArgument(
+                "white_balance_control_mode",
+                default_value="auto",
+                description="White balance control mode: auto or manual"
+            ),
+            DeclareLaunchArgument(
+                "brightness",
+                default_value="128",
+                description="Brightness (0–255).",
+            ),
+            DeclareLaunchArgument(
+                "contrast",
+                default_value="5",
+                description="Contrast.",
+            ),
+            DeclareLaunchArgument(
+                "saturation",
+                default_value="32",
+                description="Saturation.",
+            ),
+            DeclareLaunchArgument(
+                "sharpness",
+                default_value="2",
+                description="Sharpness.",
+            ),
+            DeclareLaunchArgument(
+                "gain",
+                default_value="0",
+                description="Gain.",
+            ),
+            DeclareLaunchArgument(
+                "backlight_compensation",
+                default_value="0",
+                description="Backlight compensation (0=off, 1=on).",
+            ),
+            DeclareLaunchArgument(
+                "powerline_frequency",
+                default_value="2",
+                description="Powerline frequency (1=50Hz, 2=60Hz).",
+            ),
             # The main Azure Kinect node
             launch_ros.actions.Node(
                 package="azure_kinect_ros_driver",
@@ -135,6 +228,18 @@ def generate_launch_description():
                         "imu_rate_target": LaunchConfiguration("imu_rate_target"),
                         "wired_sync_mode": LaunchConfiguration("wired_sync_mode"),
                         "subordinate_delay_off_master_usec": LaunchConfiguration("subordinate_delay_off_master_usec"),
+                        # NEW color control parameters
+                        "exposure_time_absolute": LaunchConfiguration("exposure_time_absolute"),
+                        "exposure_control_mode":    LaunchConfiguration("exposure_control_mode"),
+                        "white_balance": LaunchConfiguration("white_balance"),
+                        "white_balance_control_mode": LaunchConfiguration("white_balance_control_mode"),
+                        "brightness": LaunchConfiguration("brightness"),
+                        "contrast": LaunchConfiguration("contrast"),
+                        "saturation": LaunchConfiguration("saturation"),
+                        "sharpness": LaunchConfiguration("sharpness"),
+                        "gain": LaunchConfiguration("gain"),
+                        "backlight_compensation": LaunchConfiguration("backlight_compensation"),
+                        "powerline_frequency": LaunchConfiguration("powerline_frequency"),
                     },
                     param_overrides,  # <-- This overrides the above if /azure_kinect_0 is found
                 ],

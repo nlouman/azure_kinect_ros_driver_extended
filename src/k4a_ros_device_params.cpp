@@ -15,6 +15,10 @@
 // Project headers
 //
 
+// Max exposure times for 50Hz and 60Hz
+static constexpr int kMaxExposure50Hz = 130000;
+static constexpr int kMaxExposure60Hz = 133330;
+
 K4AROSDeviceParams::K4AROSDeviceParams() : rclcpp::Node("k4a_ros_device_params_node") {}
 
 k4a_result_t K4AROSDeviceParams::GetDeviceConfig(k4a_device_configuration_t* configuration)
@@ -218,6 +222,213 @@ k4a_result_t K4AROSDeviceParams::GetDeviceConfig(k4a_device_configuration_t* con
   RCLCPP_INFO_STREAM(this->get_logger(),"Setting Target IMU rate to " << imu_rate_rounded << " (desired: " << imu_rate_target << ")");
 
   return K4A_RESULT_SUCCEEDED;
+}
+
+// Apply color controls to the device
+// Note: this function is called after the device has been opened and started
+// Note: this function is not called if the color camera is disabled
+void K4AROSDeviceParams::ApplyColorControls(k4a_device_t device)
+{
+  // ─── EXPOSURE ────────────────────────────────────────────────────────────────
+  // Choose AUTO vs MANUAL based on the ROS param; apply absolute exposure time.
+  k4a_color_control_mode_t exp_mode =
+    (exposure_control_mode == "auto") 
+      ? K4A_COLOR_CONTROL_MODE_AUTO 
+      : K4A_COLOR_CONTROL_MODE_MANUAL;
+  if (exp_mode == K4A_COLOR_CONTROL_MODE_MANUAL && exposure_time_absolute < 0)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid exposure_time_absolute (%d); must be ≥ 0. Skipping exposure control.",
+      exposure_time_absolute);
+  }
+  else
+  {
+    // ─── CLAMP EXPOSURE TO SDK MAX ────────────────────────────────────────────────
+    // Determine whether we’re using 60 Hz or 50 Hz power‐line frequency:
+    bool using_60hz = (powerline_frequency == 2);
+
+    // Pick the proper SDK max-exposure value:
+    int sdk_max_exposure = using_60hz
+    ? kMaxExposure60Hz
+    : kMaxExposure50Hz;
+
+    // Clamp our requested value:
+    if (exposure_time_absolute > sdk_max_exposure)
+    {
+    RCLCPP_WARN(this->get_logger(),
+      "Requested exposure_time_absolute (%d µs) > SDK max (%d µs) for %s; clamping.",
+      exposure_time_absolute,
+      sdk_max_exposure,
+      using_60hz ? "60 Hz" : "50 Hz");
+    exposure_time_absolute = sdk_max_exposure;
+    }
+
+    // ─── NOW APPLY THE (CLAMPED) EXPOSURE ──────────────────────────────────────────
+    auto exp_mode = (exposure_control_mode == "auto")
+                      ? K4A_COLOR_CONTROL_MODE_AUTO
+                      : K4A_COLOR_CONTROL_MODE_MANUAL;
+    RCLCPP_INFO(this->get_logger(),
+      "Applying exposure: mode=%s, value=%d µs",
+      exposure_control_mode.c_str(),
+      exposure_time_absolute);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_EXPOSURE_TIME_ABSOLUTE,
+      exp_mode,
+      exposure_time_absolute);
+  }
+
+  // ─── WHITE BALANCE ───────────────────────────────────────────────────────────
+  // AUTO vs MANUAL white balance; manual values must be ≥ 1000K and divisible by 10.
+  k4a_color_control_mode_t wb_mode =
+    (white_balance_control_mode == "auto") 
+      ? K4A_COLOR_CONTROL_MODE_AUTO 
+      : K4A_COLOR_CONTROL_MODE_MANUAL;
+  if (wb_mode == K4A_COLOR_CONTROL_MODE_MANUAL)
+  {
+    if (white_balance < 1000 || white_balance % 10 != 0)
+    {
+      RCLCPP_ERROR(this->get_logger(),
+        "Invalid white_balance (%d); must be ≥1000 and divisible by 10. Skipping white balance.",
+         white_balance);
+    }
+    else
+    {
+      RCLCPP_INFO(this->get_logger(),
+        "Setting white balance: mode=%s, value=%d K",
+        white_balance_control_mode.c_str(), white_balance);
+      k4a_device_set_color_control(
+        device,
+        K4A_COLOR_CONTROL_WHITEBALANCE,
+        wb_mode,
+        white_balance);
+    }
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "Setting white balance to AUTO mode");
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_WHITEBALANCE,
+      wb_mode,
+      0);
+  }
+
+  // ─── BRIGHTNESS ───────────────────────────────────────────────────────────────
+  if (brightness < 0 || brightness > 255)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid brightness (%d); must be in [0,255]. Skipping brightness.", brightness);
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "Setting brightness = %d", brightness);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_BRIGHTNESS,
+      K4A_COLOR_CONTROL_MODE_MANUAL,
+      brightness);
+  }
+
+  // ─── CONTRAST ─────────────────────────────────────────────────────────────────
+  if (contrast < 0)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid contrast (%d); must be ≥ 0. Skipping contrast.", contrast);
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "Setting contrast = %d", contrast);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_CONTRAST,
+      K4A_COLOR_CONTROL_MODE_MANUAL,
+      contrast);
+  }
+
+  // ─── SATURATION ───────────────────────────────────────────────────────────────
+  if (saturation < 0)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid saturation (%d); must be ≥ 0. Skipping saturation.", saturation);
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "Setting saturation = %d", saturation);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_SATURATION,
+      K4A_COLOR_CONTROL_MODE_MANUAL,
+      saturation);
+  }
+
+  // ─── SHARPNESS ────────────────────────────────────────────────────────────────
+  if (sharpness < 0)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid sharpness (%d); must be ≥ 0. Skipping sharpness.", sharpness);
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "Setting sharpness = %d", sharpness);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_SHARPNESS,
+      K4A_COLOR_CONTROL_MODE_MANUAL,
+      sharpness);
+  }
+
+  // ─── GAIN ─────────────────────────────────────────────────────────────────────
+  if (gain < 0)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid gain (%d); must be ≥ 0. Skipping gain.", gain);
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "Setting gain = %d", gain);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_GAIN,
+      K4A_COLOR_CONTROL_MODE_MANUAL,
+      gain);
+  }
+
+  // ─── BACKLIGHT COMPENSATION ───────────────────────────────────────────────────
+  if (backlight_compensation != 0 && backlight_compensation != 1)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid backlight_compensation (%d); must be 0 or 1. Skipping backlight compensation.",
+      backlight_compensation);
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(),
+      "Setting backlight_compensation = %d", backlight_compensation);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_BACKLIGHT_COMPENSATION,
+      K4A_COLOR_CONTROL_MODE_MANUAL,
+      backlight_compensation);
+  }
+
+  // ─── POWERLINE FREQUENCY ──────────────────────────────────────────────────────
+  if (powerline_frequency != 1 && powerline_frequency != 2)
+  {
+    RCLCPP_ERROR(this->get_logger(),
+      "Invalid powerline_frequency (%d); must be 1 (50Hz) or 2 (60Hz). Skipping powerline frequency.",
+      powerline_frequency);
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(),
+      "Setting powerline_frequency = %d", powerline_frequency);
+    k4a_device_set_color_control(
+      device,
+      K4A_COLOR_CONTROL_POWERLINE_FREQUENCY,
+      K4A_COLOR_CONTROL_MODE_MANUAL,
+      powerline_frequency);
+  }
 }
 
 void K4AROSDeviceParams::Help()
