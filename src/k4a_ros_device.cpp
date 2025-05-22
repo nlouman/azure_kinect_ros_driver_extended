@@ -305,6 +305,25 @@ K4AROSDevice::K4AROSDevice()
     body_index_map_publisher_ = image_transport::create_publisher(this,"body_index_map/image_raw");
   }
 #endif
+
+  param_callback_handle_ = this->add_on_set_parameters_callback(
+    [this](const std::vector<rclcpp::Parameter> &params) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+        result.reason = "";
+        if (this->k4a_device_) {
+            for (const auto &param : params) {
+                if (!this->params_.SetColorControl(this->k4a_device_.handle(), param.get_name(), param)) {
+                    result.successful = false;
+                    result.reason = "Invalid value for " + param.get_name();
+                    return result;
+                }
+            }
+            RCLCPP_INFO(this->get_logger(), "Dynamically updated color control parameter(s).");
+        }
+        return result;
+    }
+  );
 }
 
 K4AROSDevice::~K4AROSDevice()

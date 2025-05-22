@@ -106,6 +106,9 @@ public:
   // Set the color control parameters
   void ApplyColorControls(k4a_device_t device);
 
+  // Set a color control parameter
+  bool SetColorControl(k4a_device_t device, const std::string& param_name, const rclcpp::Parameter& param);
+
   // Print help messages to the console
   void Help();
 

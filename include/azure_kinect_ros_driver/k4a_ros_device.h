@@ -143,6 +143,7 @@ class K4AROSDevice : public rclcpp::Node
 
   // Parameters
   K4AROSDeviceParams params_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
   // K4A device
   k4a::device k4a_device_;
